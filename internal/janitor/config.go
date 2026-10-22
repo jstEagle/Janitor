@@ -68,6 +68,9 @@ func (c *Config) Validate() error {
 	if c.ArtifactIdleHours < 1 || c.WorktreeIdleHours < 1 || c.IntervalSeconds < 10 || c.PlanTTLMinutes < 1 {
 		return errors.New("idle hours and plan TTL must be positive; interval must be at least 10 seconds")
 	}
+	if c.ArtifactIdleHours > 87600 || c.WorktreeIdleHours > 87600 || c.IntervalSeconds > 86400 || c.PlanTTLMinutes > 1440 {
+		return errors.New("idle retention must be <= 10 years; interval and plan TTL must be <= 24 hours")
+	}
 	if c.TargetFreeBytes < c.MinFreeBytes {
 		return errors.New("target_free_bytes must be >= min_free_bytes")
 	}

@@ -469,3 +469,100 @@ func TestUnusualPath(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestDescendantRetainsWorkspaceLock(t *testing.T) {
+	f := setup(t)
+	f.enroll(t, f.repo, false)
+	stop := filepath.Join(t.TempDir(), "stop")
+	t.Cleanup(func() { _ = os.WriteFile(stop, []byte("stop"), 0600) })
+	// The background helper retains inherited fd 3 after the foreground shell exits.
+	if e := f.a.Run(f.repo, []string{"sh", "-c", `sh -c 'while test ! -f "$1"; do sleep 0.1; done' helper "$1" &`, "parent", stop}); e != nil {
+		t.Fatal(e)
+	}
+	lock, e := f.a.workspaceLock(f.repo, false, true)
+	if e == nil {
+		unlock(lock)
+		t.Fatal("descendant's inherited lease was unlocked")
+	}
+	write(t, stop, "stop")
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		lock, e = f.a.workspaceLock(f.repo, false, true)
+		if e == nil {
+			unlock(lock)
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("descendant did not release lock")
+}
+
+func TestPlanRevalidatesAllActionsBeforeDeleting(t *testing.T) {
+	f := setup(t)
+	first := f.artifact(t, f.repo)
+	write(t, filepath.Join(f.repo, ".next", "cache"), "cache")
+	f.enroll(t, f.repo, false)
+	f.age(t)
+	p := f.plan(t)
+	if len(p.Actions) != 2 {
+		t.Fatalf("%+v", p.Actions)
+	}
+	write(t, filepath.Join(f.repo, ".next", "new"), "new activity")
+	if _, e := f.a.Apply(p.ID, false); e == nil {
+		t.Fatal("changed multi-action plan applied")
+	}
+	exists(t, first, true)
+}
+
+func TestUnsupportedArtifactAndOverlappingRoots(t *testing.T) {
+	f := setup(t)
+	if e := f.a.Enroll(f.repo, []string{".git"}, false); e == nil {
+		t.Fatal("unsupported artifact accepted")
+	}
+	c := f.a.Config
+	c.Roots = append(c.Roots, f.repo)
+	if e := c.Validate(); e == nil {
+		t.Fatal("overlapping roots accepted")
+	}
+	if _, e := New(f.a.Config, filepath.Join(f.repo, "state")); e == nil {
+		t.Fatal("state inside roots accepted")
+	}
+	exists(t, filepath.Join(f.repo, "state"), false)
+}
+
+func TestUnknownBreakdownAndEmbeddedGitBytes(t *testing.T) {
+	f := setup(t)
+	write(t, filepath.Join(f.root, "unrecognized", "data"), strings.Repeat("x", 16384))
+	write(t, filepath.Join(f.repo, "embedded", ".git", "objects", "large"), strings.Repeat("y", 16384))
+	i, e := f.a.Scan()
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(i.Roots[0].LargestUnattributed) != 1 || i.Roots[0].LargestUnattributed[0].Size.Logical != 16384 {
+		t.Fatalf("%+v", i.Roots)
+	}
+	if i.Workspaces[0].Size.Logical < 16384 || len(i.Workspaces[0].Blocked) == 0 {
+		t.Fatalf("embedded repository not accounted and protected: %+v", i.Workspaces[0])
+	}
+}
+
+func TestCorruptStateAndProtectedConfigFailClosed(t *testing.T) {
+	f := setup(t)
+	p := f.artifact(t, f.repo)
+	f.enroll(t, f.repo, false)
+	f.age(t)
+	f.a.Config.Protected = []string{p}
+	if len(f.plan(t).Actions) != 0 {
+		t.Fatal("protected subtree eligible")
+	}
+	write(t, filepath.Join(f.a.StateDir, "state.json"), "not json")
+	if _, e := f.a.Plan(); e == nil {
+		t.Fatal("corrupt state ignored")
+	}
+	exists(t, p, true)
+	c := DefaultConfig()
+	c.ArtifactIdleHours = int(^uint(0) >> 1)
+	if e := c.Validate(); e == nil {
+		t.Fatal("overflowing retention accepted")
+	}
+}

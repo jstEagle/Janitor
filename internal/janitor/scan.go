@@ -52,10 +52,16 @@ type Workspace struct {
 	Blocked           []string   `json:"blocked"`
 	RetirementBlocked []string   `json:"retirement_blocked"`
 }
+type UnattributedPath struct {
+	Path string `json:"path"`
+	Size Size   `json:"size"`
+}
+
 type RootUsage struct {
-	Path         string `json:"path"`
-	Unattributed Size   `json:"unattributed"`
-	FreeBytes    uint64 `json:"free_bytes"`
+	LargestUnattributed []UnattributedPath `json:"largest_unattributed"`
+	Path                string             `json:"path"`
+	Unattributed        Size               `json:"unattributed"`
+	FreeBytes           uint64             `json:"free_bytes"`
 }
 type RepositoryUsage struct {
 	Path string `json:"path"`
@@ -103,11 +109,12 @@ func measure(path string, skip map[string]bool, ignoreGit bool) treeResult {
 		if ignoreGit && p != path && d.Name() == ".git" {
 			if filepath.Dir(p) != path {
 				r.Issues = append(r.Issues, "nested repository: "+filepath.Dir(p))
+			} else {
+				if d.IsDir() {
+					return filepath.SkipDir
+				}
+				return nil
 			}
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
 		}
 		inf, err := d.Info()
 		if err != nil {
@@ -395,7 +402,25 @@ func (a *App) scanLocked(s *State) (Inventory, error) {
 		if e != nil {
 			inv.Warnings = append(inv.Warnings, e.Error())
 		}
-		inv.Roots = append(inv.Roots, RootUsage{root, m.Size, free})
+		largest := []UnattributedPath{}
+		entries, err := os.ReadDir(root)
+		if err == nil {
+			for _, entry := range entries {
+				p := filepath.Join(root, entry.Name())
+				if paths[p] || entry.Type()&os.ModeSymlink != 0 {
+					continue
+				}
+				m := measure(p, paths, false)
+				if m.Size.Logical > 0 {
+					largest = append(largest, UnattributedPath{p, m.Size})
+				}
+			}
+		}
+		sort.Slice(largest, func(i, j int) bool { return largest[i].Size.Allocated > largest[j].Size.Allocated })
+		if len(largest) > 20 {
+			largest = largest[:20]
+		}
+		inv.Roots = append(inv.Roots, RootUsage{Path: root, Unattributed: m.Size, FreeBytes: free, LargestUnattributed: largest})
 	}
 	// Retain recently missing observations for 30 days, without unbounded history growth.
 	for p, o := range s.Observations {

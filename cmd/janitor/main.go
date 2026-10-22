@@ -320,6 +320,9 @@ func human(out io.Writer, v any) error {
 		fmt.Fprintf(out, "Inventory %s · %d workspaces\n", x.At.Format(time.RFC3339), len(x.Workspaces))
 		for _, r := range x.Roots {
 			fmt.Fprintf(out, "  %q: %s free · %s outside discovered workspaces\n", r.Path, bytes(int64(r.FreeBytes)), bytes(r.Unattributed.Allocated))
+			for _, unknown := range r.LargestUnattributed {
+				fmt.Fprintf(out, "    %8s  %q (unattributed)\n", bytes(unknown.Size.Allocated), unknown.Path)
+			}
 		}
 		for _, w := range x.Workspaces {
 			state := "enrolled"

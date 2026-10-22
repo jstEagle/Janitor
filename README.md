@@ -51,7 +51,7 @@ janitor explain ~/projects/my-app
 
 Use roots that exist on your machine. `init` never overwrites a config. Avoid overlapping roots; if agent worktrees already live inside a project root, they do not need another root entry.
 
-The scan includes registered worktrees within those roots, recognized artifacts in nested packages, shared Git metadata, and storage outside discovered workspaces. Registered worktrees outside your roots are reported but not scanned. Symlinks are not followed during traversal. Mount boundaries and unreadable data are reported.
+The scan includes registered worktrees within those roots, recognized artifacts in nested packages, shared Git metadata, and storage outside discovered workspaces. Each root includes its 20 largest unattributed immediate children so large unknown directories remain visible. Registered worktrees outside your roots are reported but not scanned. Symlinks are not followed during traversal. Mount boundaries and unreadable data are reported.
 
 A scan writes local observations but never deletes project files. `status` reads the last inventory and displays its timestamp; use `scan` to refresh it. `--json` provides the full inventory, including protection reasons and artifact sizes.
 
