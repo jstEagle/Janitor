@@ -1,0 +1,51 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: false
+      - run: go test -race ./...
+      - run: go vet ./...
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: false
+      - name: Build archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for os in darwin linux; do
+            for arch in amd64 arm64; do
+              dir="janitor_${GITHUB_REF_NAME}_${os}_${arch}"
+              mkdir -p "dist/$dir"
+              GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=$GITHUB_REF_NAME" -o "dist/$dir/janitor" ./cmd/janitor
+              cp LICENSE README.md "dist/$dir/"
+              tar -C dist -czf "dist/$dir.tar.gz" "$dir"
+            done
+          done
+          cd dist
+          sha256sum *.tar.gz > SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes --title "Janitor $GITHUB_REF_NAME"
