@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Preserve workspaces referenced by direct symlinks from other discovered workspaces, and reject saved cleanup plans when a new inbound reference appears.
+
 ## 0.1.0
 
 Initial public release for macOS and Linux.

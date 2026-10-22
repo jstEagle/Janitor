@@ -38,6 +38,8 @@ The initial release uses full periodic scans. It does not depend on lossy filesy
 
 ## Policy and execution
 
+Workspace metadata walks collect lexical symlink destinations without following links. A direct inbound reference from another discovered workspace blocks deletion of the destination workspace, even if the consumer is not enrolled. Incomplete workspace walks leave the inbound reference graph unknown and block destinations conservatively. Plans recheck these holds during fresh reconciliation. This does not resolve references outside discovered workspaces, symlink chains, or package-manager-specific metadata, and it does not make cross-workspace edits atomic: the cooperation contract still requires leases on shared workspaces while they are used.
+
 New observations start an idle grace period. Enrollment and session completion reset it. Unknown state blocks deletion. Artifact cleanup requires a matching ecosystem marker, an explicitly enrolled kind, no tracked files or nested repository, an idle workspace, and no workspace protection. Full retirement additionally requires dual opt-in, a clean linked tree without ignored data, no locks/submodules, and retained branch/remote-tracking evidence.
 
 A plan captures policy and action fingerprints. Apply re-scans and verifies every planned action before mutation; if any differs, the whole plan is rejected. It then rechecks each action under its workspace lock. Multiple artifact actions in one workspace are allowed: their individual fingerprints remain valid as earlier siblings are removed. A new workspace observation is required after successful cleanup.
