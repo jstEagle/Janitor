@@ -41,6 +41,8 @@ type Artifact struct {
 	Blocked     []string `json:"blocked"`
 }
 type Workspace struct {
+	linkTargets       map[string]bool
+	referencesUnknown bool
 	Path              string     `json:"path"`
 	Identity          string     `json:"identity"`
 	Size              Size       `json:"size"`
@@ -77,6 +79,7 @@ type Inventory struct {
 	Warnings     []string          `json:"warnings"`
 }
 type treeResult struct {
+	LinkTargets map[string]bool
 	Size        Size
 	Fingerprint string
 	Identity    string
@@ -85,7 +88,7 @@ type treeResult struct {
 }
 
 func measure(path string, skip map[string]bool, ignoreGit bool) treeResult {
-	r := treeResult{}
+	r := treeResult{LinkTargets: map[string]bool{}}
 	info, e := os.Lstat(path)
 	if e != nil {
 		r.Issues = append(r.Issues, e.Error())
@@ -140,6 +143,12 @@ func measure(path string, skip map[string]bool, ignoreGit bool) treeResult {
 				r.Issues = append(r.Issues, err.Error())
 			}
 			fmt.Fprintf(h, "link %q\n", target)
+			if err == nil {
+				if !filepath.IsAbs(target) {
+					target = filepath.Join(filepath.Dir(p), target)
+				}
+				r.LinkTargets[filepath.Clean(target)] = true
+			}
 			return nil
 		}
 		if !inf.IsDir() && !inf.Mode().IsRegular() {
@@ -245,6 +254,8 @@ func (a *App) inspect(p string, s *State, skip map[string]bool) Workspace {
 	w.Identity = t.Identity
 	w.Fingerprint = t.Fingerprint
 	w.Blocked = append(w.Blocked, t.Issues...)
+	w.linkTargets = t.LinkTargets
+	w.referencesUnknown = len(t.Issues) > 0
 	canonical, e := Canonical(p)
 	if e != nil || canonical != p {
 		w.Blocked = append(w.Blocked, "workspace path changed or contains a symlink")
@@ -386,6 +397,7 @@ func (a *App) scanLocked(s *State) (Inventory, error) {
 	for _, p := range sorted {
 		inv.Workspaces = append(inv.Workspaces, a.inspect(p, s, paths))
 	}
+	protectInboundReferences(inv.Workspaces)
 	repos := map[string]bool{}
 	for _, w := range inv.Workspaces {
 		if w.Git.CommonDir != "" && !repos[w.Git.CommonDir] {

@@ -183,6 +183,7 @@ APFS clones, snapshots, open deleted files, and concurrent writes affect real re
 
 ## Current boundaries
 
+- Direct symlinks from one discovered workspace into another protect the destination workspace from artifact eviction and retirement, including when the consumer is not enrolled. Incomplete workspace traversal blocks this cross-workspace reference check. This is a conservative hold, not a complete dependency graph: references outside configured roots, symlink chains, package-manager metadata and path strings in scripts are not resolved. Cooperating users must still hold activity leases on every workspace they use, including shared dependency installations.
 - macOS and Linux local filesystems. Network filesystems are unsupported for cleanup and reliable locking.
 - Periodic full metadata reconciliation, with serialized scans. No continuous filesystem watcher yet. Large cold scans can be I/O-intensive; adjust the interval.
 - Atomic JSON snapshots and per-plan journals; no database server or third-party Go dependencies.
